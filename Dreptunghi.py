@@ -7,7 +7,7 @@ import time
 # === Domain parameters ===
 a = 5
 b = 2
-n_vals = [4,8,16,32,64,128,256]  # Different grid sizes to visualize
+n_vals = [4, 8, 16, 32,64,128]  # Different grid sizes to visualize
 max_errors = []
 
 
@@ -178,16 +178,7 @@ def spline_bi2d(X, Y, Z):
     row_splines = []
     for j in range(len(Y)):
         row_splines.append(spline_patratica_1d(X, Z[j, :]))
-
-    col_spline = spline_patratica_1d(Y, np.array([s(0.5) for s in row_splines]))
-
-    def eval_bi2d(x, y):
-        # Vectorized evaluation
-        z_vals = np.array([spline(x) for spline in row_splines])
-        col_spline = spline_patratica_1d(Y, z_vals)
-        return col_spline(y)
-
-    return eval_bi2d
+    return row_splines
 
 
 # === Visualization function ===
@@ -237,24 +228,36 @@ for N_val in n_vals:
     # Prepare grid
     x_vals = np.linspace(0, a, N_val + 1)
     y_vals = np.linspace(0, b, N_val + 1)
-    X, Y = np.meshgrid(x_vals, y_vals)
     Z_vals = U.reshape((N_val + 1, N_val + 1))
 
-    # Create spline interpolant
-    spline2d = spline_bi2d(x_vals, y_vals, Z_vals)
+    # Create spline interpolants
+    row_splines = spline_bi2d(x_vals, y_vals, Z_vals)
 
-    # Evaluate on dense grid
-    x_dense = np.linspace(0, a, 50)
-    y_dense = np.linspace(0, b, 50)
+    # Adjust dense grid resolution based on problem size
+    if N_val <= 64:
+        num_dense = 50
+    elif N_val <= 128:
+        num_dense = 30
+    else:
+        num_dense = 20
+
+    x_dense = np.linspace(0, a, num_dense)
+    y_dense = np.linspace(0, b, num_dense)
     X_dense, Y_dense = np.meshgrid(x_dense, y_dense)
 
-    # Vectorized evaluation
-    Z_dense = np.zeros_like(X_dense)
-    for j in range(len(y_dense)):
-        for i in range(len(x_dense)):
-            Z_dense[j, i] = spline2d(X_dense[j, i], Y_dense[j, i])
+    # Evaluate splines efficiently
+    # Step 1: Evaluate row splines at dense x points
+    Z_row = np.zeros((len(y_vals), len(x_dense)))
+    for j, spl in enumerate(row_splines):
+        Z_row[j, :] = np.array([spl(x) for x in x_dense])
 
-    # Exact solution
+    # Step 2: Build column splines and evaluate at dense y points
+    Z_dense = np.zeros((len(y_dense), len(x_dense)))
+    for i in range(len(x_dense)):
+        col_spline = spline_patratica_1d(y_vals, Z_row[:, i])
+        Z_dense[:, i] = np.array([col_spline(y) for y in y_dense])
+
+    # Exact solution on dense grid
     Z_exact = u(X_dense, Y_dense)
 
     # Plot and record error
